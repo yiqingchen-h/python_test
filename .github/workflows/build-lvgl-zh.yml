@@ -1,0 +1,127 @@
+name: Build LVGL full Chinese documentation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-lvgl-zh.yml'
+      - 'scripts/build_lvgl_zh.py.gz.b64'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-lvgl-zh
+  cancel-in-progress: false
+
+env:
+  LVGL_COMMIT: 40fb6ba26c5e3b326df75c6c39ada36c4afb6c0a
+  OPEN_DOCS_COMMIT: eabf56edff4dc75595b3d2ae14b89d87e35d1136
+  RELEASE_TAG: lvgl-zh-40fb6ba
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Decode translation builder
+        shell: bash
+        run: |
+          base64 --decode scripts/build_lvgl_zh.py.gz.b64 | gzip --decompress > scripts/build_lvgl_zh.py
+          python -m py_compile scripts/build_lvgl_zh.py
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git zip
+          python -m pip install --upgrade pip
+          python -m pip install argostranslate tqdm requests beautifulsoup4 lxml
+
+      - name: Fetch generated LVGL documentation
+        shell: bash
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/lvgl/open-docs.git upstream
+          cd upstream
+          git sparse-checkout init --cone
+          git sparse-checkout set latest
+          git checkout "$OPEN_DOCS_COMMIT"
+          test -f latest/src/meta.json
+
+      - name: Translate complete documentation
+        shell: bash
+        env:
+          LVGL_DOC_SOURCE: upstream/latest/src
+          LVGL_DOC_OUTPUT: build/LVGL_完整中文文档
+          LVGL_SOURCE_COMMIT: ${{ env.LVGL_COMMIT }}
+        run: |
+          mkdir -p build
+          HELP="$(python scripts/build_lvgl_zh.py --help 2>&1 || true)"
+          if grep -q -- '--source' <<< "$HELP"; then
+            python scripts/build_lvgl_zh.py \
+              --source "$LVGL_DOC_SOURCE" \
+              --output "$LVGL_DOC_OUTPUT" \
+              --commit "$LVGL_SOURCE_COMMIT"
+          else
+            python scripts/build_lvgl_zh.py
+          fi
+
+      - name: Validate and package outputs
+        shell: bash
+        run: |
+          test -d build/LVGL_完整中文文档
+          find build/LVGL_完整中文文档 -type f \( -name '*.md' -o -name '*.mdx' \) | sort > build/file-list.txt
+          COUNT=$(wc -l < build/file-list.txt)
+          test "$COUNT" -gt 100
+          printf 'LVGL source commit: %s\nOpen-docs commit: %s\nTranslated Markdown/MDX files: %s\n' \
+            "$LVGL_COMMIT" "$OPEN_DOCS_COMMIT" "$COUNT" > build/BUILD_INFO.txt
+          if [ ! -f build/LVGL_完整中文文档_合并版.md ]; then
+            python - <<'PY'
+          from pathlib import Path
+          root = Path('build/LVGL_完整中文文档')
+          out = Path('build/LVGL_完整中文文档_合并版.md')
+          files = sorted([*root.rglob('*.md'), *root.rglob('*.mdx')])
+          with out.open('w', encoding='utf-8', newline='\n') as w:
+              w.write('# LVGL Latest 完整中文文档\n\n')
+              w.write('> 固定来源提交：`40fb6ba26c5e3b326df75c6c39ada36c4afb6c0a`。\n\n')
+              for p in files:
+                  rel = p.relative_to(root).as_posix()
+                  w.write(f'\n\n---\n\n<!-- SOURCE: {rel} -->\n\n')
+                  w.write(p.read_text(encoding='utf-8', errors='replace'))
+                  w.write('\n')
+          PY
+          fi
+          cd build
+          zip -qr LVGL_完整中文文档_目录版.zip LVGL_完整中文文档 BUILD_INFO.txt file-list.txt
+          sha256sum LVGL_完整中文文档_目录版.zip LVGL_完整中文文档_合并版.md > SHA256SUMS.txt
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LVGL-full-Chinese-docs
+          path: |
+            build/LVGL_完整中文文档_目录版.zip
+            build/LVGL_完整中文文档_合并版.md
+            build/BUILD_INFO.txt
+            build/file-list.txt
+            build/SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete "$RELEASE_TAG" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$RELEASE_TAG" \
+            build/LVGL_完整中文文档_目录版.zip \
+            build/LVGL_完整中文文档_合并版.md \
+            build/BUILD_INFO.txt \
+            build/file-list.txt \
+            build/SHA256SUMS.txt \
+            --title 'LVGL Latest 完整中文文档（全量 API）' \
+            --notes "来源：lvgl/lvgl@$LVGL_COMMIT。包含教程、示例、XML、公开/私有/弃用 API 和 Changelog。"
