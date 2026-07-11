@@ -49,11 +49,15 @@ jobs:
           python - <<'PY'
           from argostranslate import package, translate
 
-          installed = translate.get_installed_languages()
-          if any(
-              src.code == 'en' and any(tgt.code == 'zh' for tgt in src.translations_to)
-              for src in installed
-          ):
+          def get_pair():
+              languages = {lang.code: lang for lang in translate.get_installed_languages()}
+              source = languages.get('en')
+              target = languages.get('zh')
+              if source is None or target is None:
+                  return None
+              return source.get_translation(target)
+
+          if get_pair() is not None:
               print('Argos en->zh model is already installed')
               raise SystemExit(0)
 
@@ -69,13 +73,11 @@ jobs:
           print(f'Installing Argos model: {model}')
           package.install_from_path(model.download())
 
-          installed = translate.get_installed_languages()
-          if not any(
-              src.code == 'en' and any(tgt.code == 'zh' for tgt in src.translations_to)
-              for src in installed
-          ):
+          translator = get_pair()
+          if translator is None:
               raise SystemExit('Argos en->zh model installation verification failed')
           print('Argos en->zh model installed successfully')
+          print('Smoke test:', translator.translate('Hello world'))
           PY
 
       - name: Fetch generated LVGL documentation
