@@ -57,18 +57,11 @@ jobs:
         env:
           LVGL_DOC_SOURCE: upstream/latest/src
           LVGL_DOC_OUTPUT: build/LVGL_完整中文文档
-          LVGL_SOURCE_COMMIT: ${{ env.LVGL_COMMIT }}
         run: |
           mkdir -p build
-          HELP="$(python scripts/build_lvgl_zh.py --help 2>&1 || true)"
-          if grep -q -- '--source' <<< "$HELP"; then
-            python scripts/build_lvgl_zh.py \
-              --source "$LVGL_DOC_SOURCE" \
-              --output "$LVGL_DOC_OUTPUT" \
-              --commit "$LVGL_SOURCE_COMMIT"
-          else
-            python scripts/build_lvgl_zh.py
-          fi
+          python scripts/build_lvgl_zh.py \
+            --source "$LVGL_DOC_SOURCE" \
+            --output "$LVGL_DOC_OUTPUT"
 
       - name: Validate and package outputs
         shell: bash
