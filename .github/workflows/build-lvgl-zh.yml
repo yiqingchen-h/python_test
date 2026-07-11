@@ -29,44 +29,54 @@ jobs:
       - name: Checkout build repository
         uses: actions/checkout@v4
 
-      - name: Decode and patch translation builder
+      - name: Decode translation builder
         shell: bash
         run: |
           base64 --decode scripts/build_lvgl_zh.py.gz.b64 | gzip --decompress > scripts/build_lvgl_zh.py
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('scripts/build_lvgl_zh.py')
-          source = path.read_text(encoding='utf-8')
-          old = '            urllib.request.urlretrieve(MODEL_URL, temp)'
-          new = '''            last_error = None
-            for user_agent in ("ArgosTranslate", "Mozilla/5.0"):
-                try:
-                    request = urllib.request.Request(
-                        MODEL_URL,
-                        headers={"User-Agent": user_agent},
-                    )
-                    with urllib.request.urlopen(request, timeout=180) as response:
-                        with open(temp, "wb") as output:
-                            output.write(response.read())
-                    last_error = None
-                    break
-                except Exception as exc:
-                    last_error = exc
-            if last_error is not None:
-                raise last_error'''
-          if old not in source:
-              raise SystemExit('Expected Argos download line was not found')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
-          PY
           python -m py_compile scripts/build_lvgl_zh.py
 
       - name: Install runtime dependencies
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends git zip
           python -m pip install --upgrade pip
           python -m pip install argostranslate tqdm requests beautifulsoup4 lxml
+
+      - name: Install Argos English to Chinese model
+        shell: bash
+        run: |
+          python - <<'PY'
+          from argostranslate import package, translate
+
+          installed = translate.get_installed_languages()
+          if any(
+              src.code == 'en' and any(tgt.code == 'zh' for tgt in src.translations_to)
+              for src in installed
+          ):
+              print('Argos en->zh model is already installed')
+              raise SystemExit(0)
+
+          package.update_package_index()
+          candidates = [
+              pkg for pkg in package.get_available_packages()
+              if pkg.from_code == 'en' and pkg.to_code == 'zh'
+          ]
+          if not candidates:
+              raise SystemExit('No Argos en->zh package found in package index')
+
+          model = sorted(candidates, key=lambda p: p.package_version, reverse=True)[0]
+          print(f'Installing Argos model: {model}')
+          package.install_from_path(model.download())
+
+          installed = translate.get_installed_languages()
+          if not any(
+              src.code == 'en' and any(tgt.code == 'zh' for tgt in src.translations_to)
+              for src in installed
+          ):
+              raise SystemExit('Argos en->zh model installation verification failed')
+          print('Argos en->zh model installed successfully')
+          PY
 
       - name: Fetch generated LVGL documentation
         shell: bash
