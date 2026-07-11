@@ -29,10 +29,36 @@ jobs:
       - name: Checkout build repository
         uses: actions/checkout@v4
 
-      - name: Decode translation builder
+      - name: Decode and patch translation builder
         shell: bash
         run: |
           base64 --decode scripts/build_lvgl_zh.py.gz.b64 | gzip --decompress > scripts/build_lvgl_zh.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/build_lvgl_zh.py')
+          source = path.read_text(encoding='utf-8')
+          old = '            urllib.request.urlretrieve(MODEL_URL, temp)'
+          new = '''            last_error = None
+            for user_agent in ("ArgosTranslate", "Mozilla/5.0"):
+                try:
+                    request = urllib.request.Request(
+                        MODEL_URL,
+                        headers={"User-Agent": user_agent},
+                    )
+                    with urllib.request.urlopen(request, timeout=180) as response:
+                        with open(temp, "wb") as output:
+                            output.write(response.read())
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if last_error is not None:
+                raise last_error'''
+          if old not in source:
+              raise SystemExit('Expected Argos download line was not found')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
           python -m py_compile scripts/build_lvgl_zh.py
 
       - name: Install runtime dependencies
