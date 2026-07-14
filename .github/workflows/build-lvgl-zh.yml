@@ -3,10 +3,11 @@ name: Build LVGL full Chinese documentation
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
-      - '.github/workflows/build-lvgl-zh.yml'
-      - 'scripts/build_lvgl_zh.py.gz.b64'
+      - .github/workflows/build-lvgl-zh.yml
+      - scripts/build_lvgl_zh.py.gz.b64
 
 permissions:
   contents: write
@@ -17,4 +18,4 @@ concurrency:
 
 env:
   LVGL_COMMIT: 40fb6ba26c5e3b326df75c6c39ada36c4afb6c0a
-  OPEN
+  OPEN_DOC
