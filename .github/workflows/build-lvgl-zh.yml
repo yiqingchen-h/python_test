@@ -18,4 +18,4 @@ concurrency:
 
 env:
   LVGL_COMMIT: 40fb6ba26c5e3b326df75c6c39ada36c4afb6c0a
-  OPEN_DOC
+  OPEN_DOCS_COMMIT: eabf56edff4dc75595b3d2
